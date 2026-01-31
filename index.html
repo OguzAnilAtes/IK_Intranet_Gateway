@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IK Yönetim Paneli - Yükleniyor</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    
+    <style>
+        body {
+            background-color: #f8f9fa;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden; /* Kaydırma çubuklarını gizle */
+        }
+        .lobby-card {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            padding: 40px;
+            text-align: center;
+            max-width: 500px;
+            width: 90%;
+            position: relative;
+        }
+        .status-badge {
+            background-color: #e9ecef;
+            color: #6c757d;
+            padding: 8px 16px;
+            border-radius: 50px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 20px;
+        }
+        .spinner-border-sm {
+            width: 1rem;
+            height: 1rem;
+            border-width: 0.15em;
+        }
+        /* YILAN OYUNU ALANI */
+        canvas {
+            background-color: #212529;
+            border-radius: 10px;
+            box-shadow: inset 0 0 20px rgba(0,0,0,0.5);
+            margin: 20px auto;
+            display: block;
+        }
+        .score-board {
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: #0d6efd;
+            margin-bottom: 10px;
+        }
+        .controls-hint {
+            font-size: 0.8rem;
+            color: #adb5bd;
+            margin-top: 10px;
+        }
+        /* Yönlendirme maskesi */
+        #redirectOverlay {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(255,255,255,0.95);
+            border-radius: 20px;
+            display: none; /* Başlangıçta gizli */
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 10;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="lobby-card">
+        
+        <div id="redirectOverlay">
+            <div class="display-1 text-success mb-3"><i class="bi bi-check-circle-fill"></i></div>
+            <h3 class="fw-bold text-dark">Sistem Hazır!</h3>
+            <p class="text-muted">Yönlendiriliyorsunuz...</p>
+        </div>
+
+        <h2 class="fw-bold text-dark mb-1">IK Yönetim Paneli</h2>
+        <p class="text-muted small mb-4">Personel ve Görev Takip Sistemi</p>
+
+        <div class="status-badge">
+            <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+            <span>Sunucu hazırlanıyor, lütfen bekleyin...</span>
+        </div>
+
+        <div class="score-board">Skor: <span id="score">0</span></div>
+        <canvas id="gameCanvas" width="300" height="300"></canvas>
+        <p class="controls-hint">
+            <i class="bi bi-arrows-move me-1"></i> Yön Tuşları ile Oyna<br>
+            (Mobil: Ekrana Dokunarak Yönlendir)
+        </p>
+
+    </div>
+
+    <script>
+        // Asıl sitenin URL'si
+        const HEDEF_URL = "https://ik-takip-sistemi.onrender.com"; 
+        
+        let isRedirecting = false;
+
+        function checkServer() {
+            if (isRedirecting) return;
+
+            // 'no-cors' modu önemli! Sunucunun CORS ayarı olmasa bile
+            // sunucunun uyanıp uyanmadığını anlamamızı sağlar.
+            fetch(HEDEF_URL, { mode: 'no-cors' })
+                .then(() => {
+                    // Cevap geldiyse (Hata veya Başarılı fark etmez, sunucu uyanıktır)
+                    serverReady();
+                })
+                .catch(err => {
+                    // Bağlantı hatası varsa sunucu hala kapalı veya uyanıyor demektir.
+                    console.log("Sunucu henüz hazır değil, tekrar deneniyor...", err);
+                    setTimeout(checkServer, 2000); // 2 saniye sonra tekrar dene
+                });
+        }
+
+        function serverReady() {
+            isRedirecting = true;
+            
+            // Oyunu Durdur
+            clearInterval(gameLoop);
+            
+            // Maskeyi Göster
+            document.getElementById('redirectOverlay').style.display = 'flex';
+            
+            // 1 saniye sonra asıl siteye git (Kullanıcı 'Hazır' yazısını görsün diye)
+            setTimeout(() => {
+                window.location.href = HEDEF_URL;
+            }, 1000);
+        }
+
+        // Sayfa açılır açılmaz kontrolü başlat
+        checkServer();
+
+
+        // SNAKE GAME
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+        const box = 15; // Yılanın kalınlığı
+        let score = 0;
+        
+        let snake = [];
+        snake[0] = { x: 10 * box, y: 10 * box };
+        
+        let food = {
+            x: Math.floor(Math.random() * (canvas.width/box)) * box,
+            y: Math.floor(Math.random() * (canvas.height/box)) * box
+        };
+        
+        let d; // Yön
+        
+        document.addEventListener("keydown", direction);
+        
+        // Mobil Dokunmatik Kontrolleri
+        let touchStartX = 0;
+        let touchStartY = 0;
+        canvas.addEventListener('touchstart', function(e) {
+            touchStartX = e.changedTouches[0].screenX;
+            touchStartY = e.changedTouches[0].screenY;
+        }, false);
+        canvas.addEventListener('touchend', function(e) {
+            let touchEndX = e.changedTouches[0].screenX;
+            let touchEndY = e.changedTouches[0].screenY;
+            handleSwipe(touchStartX, touchStartY, touchEndX, touchEndY);
+        }, false);
+
+        function handleSwipe(sx, sy, ex, ey) {
+            let xDiff = ex - sx;
+            let yDiff = ey - sy;
+            if (Math.abs(xDiff) > Math.abs(yDiff)) {
+                if (xDiff > 0 && d != "LEFT") d = "RIGHT";
+                else if (xDiff < 0 && d != "RIGHT") d = "LEFT";
+            } else {
+                if (yDiff > 0 && d != "UP") d = "DOWN";
+                else if (yDiff < 0 && d != "DOWN") d = "UP";
+            }
+        }
+
+        function direction(event) {
+            let key = event.keyCode;
+            if (key == 37 && d != "RIGHT") d = "LEFT";
+            else if (key == 38 && d != "DOWN") d = "UP";
+            else if (key == 39 && d != "LEFT") d = "RIGHT";
+            else if (key == 40 && d != "UP") d = "DOWN";
+        }
+        
+        function draw() {
+            ctx.fillStyle = "#212529"; // Arkaplan
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            for (let i = 0; i < snake.length; i++) {
+                ctx.fillStyle = (i == 0) ? "#0d6efd" : "#adb5bd"; // Baş mavi, kuyruk gri
+                ctx.fillRect(snake[i].x, snake[i].y, box, box);
+                
+                ctx.strokeStyle = "#212529";
+                ctx.strokeRect(snake[i].x, snake[i].y, box, box);
+            }
+            
+            ctx.fillStyle = "#ffc107"; // Yemek (Sarı)
+            ctx.fillRect(food.x, food.y, box, box);
+            
+            // Eski kafa pozisyonu
+            let snakeX = snake[0].x;
+            let snakeY = snake[0].y;
+            
+            if (d == "LEFT") snakeX -= box;
+            if (d == "UP") snakeY -= box;
+            if (d == "RIGHT") snakeX += box;
+            if (d == "DOWN") snakeY += box;
+            
+            // Yemek yendi mi?
+            if (snakeX == food.x && snakeY == food.y) {
+                score++;
+                document.getElementById("score").innerText = score;
+                food = {
+                    x: Math.floor(Math.random() * (canvas.width/box)) * box,
+                    y: Math.floor(Math.random() * (canvas.height/box)) * box
+                };
+            } else {
+                // Kuyruğu sil
+                snake.pop();
+            }
+            
+            // Çarpışma Kuralları
+            if (snakeX < 0 || snakeX >= canvas.width || snakeY < 0 || snakeY >= canvas.height || collision(snakeX, snakeY, snake)) {
+                // Oyun Bitti - Resetle
+                score = 0;
+                document.getElementById("score").innerText = score;
+                snake = [];
+                snake[0] = { x: 10 * box, y: 10 * box };
+                d = null; // Durdur
+            }
+            
+            let newHead = { x: snakeX, y: snakeY };
+            
+            if(d != null) snake.unshift(newHead);
+        }
+        
+        function collision(headX, headY, array) {
+            for (let i = 0; i < array.length; i++) {
+                if (headX == array[i].x && headY == array[i].y) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        
+        let gameLoop = setInterval(draw, 100); // Oyun Hızı
+    </script>
+</body>
+</html>
