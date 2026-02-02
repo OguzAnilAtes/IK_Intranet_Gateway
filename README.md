@@ -43,7 +43,7 @@ I created a custom circular snake game that functions as an interactive loading 
 ## 🔗 Live Demo
 
 You can try the game and wake up the server here:
-[👉 IK Intranet App - Gateway](oguzanilates.github.io/IK_Intranet_Gateway/)
+[IK Intranet App - Gateway](https://oguzanilates.github.io/IK_Intranet_Gateway/)
 
 ---
 *This project demonstrates how technical constraints can be turned into creative UX advantages.*
